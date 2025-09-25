@@ -6,4 +6,4 @@ plotly
 scikit-learn
 catboost
 xgboost
-oputuna
+optuna
