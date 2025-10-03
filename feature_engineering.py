@@ -7,30 +7,86 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 from supabase import create_client, Client
+
+
+# Reuse from ingest_h.py if you already have it:
+def _get_secret(path: str, default: Optional[str] = None) -> Optional[str]:
+    """
+    Read nested keys from streamlit secrets as 'section.key' (e.g., 'supabase.url').
+    Falls back to env vars mapped below.
+    """
+    try:
+        import streamlit as st
+        cur = st.secrets
+        for key in path.split("."):
+            if key in cur:
+                cur = cur[key]
+            else:
+                cur = None
+                break
+        if isinstance(cur, str) and cur.strip():
+            return cur.strip()
+    except Exception:
+        pass
+
+    ENV_MAP = {
+        "supabase.url": "SUPABASE_URL",
+        "supabase.key": "SUPABASE_ANON_KEY",
+        "supabase.service_role_key": "SUPABASE_SERVICE_ROLE_KEY",
+        "tables.clean": "HOUSE_CLEAN_TABLE",
+        "tables.feature": "HOUSE_FEATURE_TABLE",
+        "tables.schema": "HOUSE_SCHEMA",
+    }
+    env_name = ENV_MAP.get(path)
+    if env_name:
+        v = os.getenv(env_name)
+        if v and v.strip():
+            return v.strip()
+
+    return default
 
 
 class HouseFeatureEngineering:
     """
-    Read from public.clean_house, create features, write to public.feature_house.
+    Read from {schema}.{clean_table}, create features, write to {schema}.{feature_table}.
     """
 
     def __init__(
         self,
         supabase_url: Optional[str] = None,
         supabase_key: Optional[str] = None,
+        *,
+        service_role_key: Optional[str] = None,
+        schema: Optional[str] = None,
+        clean_table: Optional[str] = None,
+        feature_table: Optional[str] = None,
     ):
-        load_dotenv()
-        self.supabase_url = supabase_url or os.environ["SUPABASE_URL"]
-        self.supabase_key = supabase_key or os.environ["SUPABASE_ANON_KEY"]
-        
-        # Anon client for reading
+        # Prefer kwargs → st.secrets → env
+        self.supabase_url = supabase_url or _get_secret("supabase.url")
+        self.supabase_key = supabase_key or _get_secret("supabase.key")
+        self.service_role_key = service_role_key or _get_secret("supabase.service_role_key")
+
+        if not self.supabase_url or not self.supabase_key:
+            raise RuntimeError(
+                "Supabase URL/Key missing. Provide via kwargs, st.secrets['supabase'], or environment."
+            )
+
+        # Table locations (optional; defaults if not provided anywhere)
+        self.schema = (schema
+                       or _get_secret("tables.schema", "public"))
+        self.clean_table = (clean_table
+                            or _get_secret("tables.clean", "clean_house"))
+        self.feature_table = (feature_table
+                              or _get_secret("tables.feature", "feature_house"))
+
+        # Clients
         self.sb: Client = create_client(self.supabase_url, self.supabase_key)
-        
-        # Service role client for writing
-        self.service_role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        self.sb_rw: Client = create_client(self.supabase_url, self.service_role_key) if self.service_role_key else self.sb
+        self.sb_rw: Client = (
+            create_client(self.supabase_url, self.service_role_key)
+            if self.service_role_key else self.sb
+        )
 
     def extract(self) -> pd.DataFrame:
         """Read data from public.clean_house table."""

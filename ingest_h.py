@@ -16,9 +16,52 @@ from io import BytesIO
 from typing import Optional, Dict
 import numpy as np
 import pandas as pd
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 from supabase import create_client, Client
 
+from typing import Optional
+import os
+from supabase import create_client, Client
+
+def _get_secret(path: str, default: Optional[str] = None) -> Optional[str]:
+    """
+    Read nested keys from streamlit secrets as 'section.key' (e.g., 'supabase.url').
+    Falls back to env var using LAST segment uppercased with SUPABASE_ prefix when sensible.
+    """
+    # 1) Try st.secrets if available
+    try:
+        import streamlit as st  # only available on Streamlit Cloud
+        cur = st.secrets
+        for key in path.split("."):
+            if key in cur:
+                cur = cur[key]
+            else:
+                cur = None
+                break
+        if isinstance(cur, str) and cur.strip():
+            return cur.strip()
+    except Exception:
+        pass
+
+    # 2) Try environment variables
+    # Map known secret paths to conventional env names
+    ENV_MAP = {
+        "supabase.url": "SUPABASE_URL",
+        "supabase.key": "SUPABASE_ANON_KEY",
+        "supabase.service_role_key": "SUPABASE_SERVICE_ROLE_KEY",
+        "supabase.bucket": "SUPABASE_BUCKET",
+        "paths.excel": "HOUSE_EXCEL_PATH",
+        "paths.ocr_csv": "HOUSE_OCR_CSV_PATH",
+        "paths.cpi_csv": "HOUSE_CPI_CSV_PATH",
+        "paths.gdp_csv": "HOUSE_GDP_CSV_PATH",
+    }
+    env_name = ENV_MAP.get(path)
+    if env_name:
+        v = os.getenv(env_name)
+        if v and v.strip():
+            return v.strip()
+
+    return default
 
 class HousePriceETL:
     """
@@ -34,6 +77,7 @@ class HousePriceETL:
     OCR_CSV_PATH = "house_row_files/OCRmodify.csv"
     CPI_CSV_PATH = "house_row_files/consumers-price-index-june-2025-quarter-seasonally-adjusted.csv"
     GDP_CSV_PATH = "house_row_files/gross-domestic-product-june-2025-quarter.csv"
+
     SHEET_NAME = "Data"
     SKIP_ROWS = 5
 
@@ -46,22 +90,33 @@ class HousePriceETL:
         ocr_csv_path: Optional[str] = None,
         cpi_csv_path: Optional[str] = None,
         gdp_csv_path: Optional[str] = None,
+        service_role_key: Optional[str] = None,
     ):
-        load_dotenv()
-        self.supabase_url = supabase_url or os.environ["SUPABASE_URL"]
-        self.supabase_key = supabase_key or os.environ["SUPABASE_ANON_KEY"]
-        self.bucket = (bucket or os.getenv("SUPABASE_BUCKET", self.DEFAULT_BUCKET)).strip()
-        self.excel_path = (excel_path or self.EXCEL_PATH).strip()
-        self.ocr_csv_path = (ocr_csv_path or self.OCR_CSV_PATH).strip()
-        self.cpi_csv_path = (cpi_csv_path or self.CPI_CSV_PATH).strip()
-        self.gdp_csv_path = (gdp_csv_path or self.GDP_CSV_PATH).strip()
-        
-        # Anon client for reading
+        # Prefer kwargs → st.secrets → env
+        self.supabase_url = (supabase_url
+                             or _get_secret("supabase.url"))
+        self.supabase_key = (supabase_key
+                             or _get_secret("supabase.key"))
+        self.service_role_key = (service_role_key
+                                 or _get_secret("supabase.service_role_key"))
+
+        if not self.supabase_url or not self.supabase_key:
+            raise RuntimeError("Supabase URL/Key missing. Provide via kwargs, st.secrets['supabase'], or env.")
+
+        # Paths & bucket can also come from secrets/env
+        self.bucket = (bucket
+                       or _get_secret("supabase.bucket", self.DEFAULT_BUCKET))
+        self.excel_path   = (excel_path   or _get_secret("paths.excel",   self.EXCEL_PATH))
+        self.ocr_csv_path = (ocr_csv_path or _get_secret("paths.ocr_csv", self.OCR_CSV_PATH))
+        self.cpi_csv_path = (cpi_csv_path or _get_secret("paths.cpi_csv", self.CPI_CSV_PATH))
+        self.gdp_csv_path = (gdp_csv_path or _get_secret("paths.gdp_csv", self.GDP_CSV_PATH))
+
+        # Anon client (read / writes allowed if your RLS permits)
         self.sb: Client = create_client(self.supabase_url, self.supabase_key)
-        
-        # Service role client for writing (if available)
-        self.service_role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+        # RW client if you’ve supplied service-role and your code needs it (e.g., list buckets, bypass RLS)
         self.sb_rw: Client = create_client(self.supabase_url, self.service_role_key) if self.service_role_key else self.sb
+
 
     # ----------------- Helpers -----------------
 
