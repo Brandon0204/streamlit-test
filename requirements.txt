@@ -10,3 +10,5 @@ optuna
 supabase>=2
 openpyxl
 psycopg2-binary
+shap
+statsmodels

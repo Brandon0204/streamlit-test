@@ -113,30 +113,55 @@ class HouseFeatureEngineering:
         return df
 
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Create all features."""
+        """Create all features WITHOUT data leakage."""
         if df.empty:
             print("TRANSFORM: No data to transform.")
             return df
         
         df = df.sort_values("quarter").reset_index(drop=True).copy()
         
-        # Add quarter number (Q1, Q2, Q3, Q4)
-        df["quarter_num"] = df["quarter"].dt.quarter
+        # Add quarter number as string (Q1, Q2, Q3, Q4)
+        df["quarter_num"] = "Q" + df["quarter"].dt.quarter.astype(str)
         
         print("\nTRANSFORM: Creating features...")
         
-        # --- House Sales Features (comprehensive) ---
+        # --- HPI Growth Features ---
+        print("  - hpi_growth: calculating percentage change")
+        df["hpi_growth"] = df["hpi"].pct_change() * 100
+        
+        print("  - hpi_growth: lags, rolling means, diffs, ratios")
+        df["hpi_growth_lag1"] = df["hpi_growth"].shift(1)
+        df["hpi_growth_lag2"] = df["hpi_growth"].shift(2)
+        df["hpi_growth_lag3"] = df["hpi_growth"].shift(3)
+        df["hpi_growth_lag4"] = df["hpi_growth"].shift(4)
+        df["hpi_growth_lag16"] = df["hpi_growth"].shift(16)  # 4 years ago
+        
+        # Rolling means - FIXED: Use shift(1) to avoid leakage
+        # These now use lagged values only (not including current period)
+        df["hpi_growth_rolling_mean_1y"] = df["hpi_growth"].shift(1).rolling(window=4, min_periods=1).mean()
+        df["hpi_growth_rolling_mean_4y"] = df["hpi_growth"].shift(1).rolling(window=16, min_periods=1).mean()
+        df["hpi_growth_rolling_mean_10y"] = df["hpi_growth"].shift(1).rolling(window=40, min_periods=1).mean()
+        
+        # Differences
+        df["hpi_growth_diff_lag1_minus_lag2"] = df["hpi_growth_lag1"] - df["hpi_growth_lag2"]
+        df["hpi_growth_diff_lag1_minus_lag4"] = df["hpi_growth_lag1"] - df["hpi_growth_lag4"]
+        
+        # Ratios (avoid division by zero)
+        df["hpi_growth_ratio_lag1_over_lag2"] = df["hpi_growth_lag1"] / df["hpi_growth_lag2"].replace(0, np.nan)
+        df["hpi_growth_ratio_lag1_over_lag4"] = df["hpi_growth_lag1"] / df["hpi_growth_lag4"].replace(0, np.nan)
+        
+        # --- House Sales Features ---
         print("  - house_sales: lags, rolling means, diffs, ratios")
         df["house_sales_lag1"] = df["house_sales"].shift(1)
         df["house_sales_lag2"] = df["house_sales"].shift(2)
         df["house_sales_lag3"] = df["house_sales"].shift(3)
         df["house_sales_lag4"] = df["house_sales"].shift(4)
-        df["house_sales_lag16"] = df["house_sales"].shift(16)  # 4 years ago (4 quarters × 4 years)
+        df["house_sales_lag16"] = df["house_sales"].shift(16)  # 4 years ago
         
-        # Rolling means (windows in quarters: 4=1yr, 16=4yr, 40=10yr)
-        df["house_sales_rolling_mean_1y"] = df["house_sales"].rolling(window=4, min_periods=1).mean()
-        df["house_sales_rolling_mean_4y"] = df["house_sales"].rolling(window=16, min_periods=1).mean()
-        df["house_sales_rolling_mean_10y"] = df["house_sales"].rolling(window=40, min_periods=1).mean()
+        # Rolling means - FIXED: Use shift(1) to avoid leakage
+        df["house_sales_rolling_mean_1y"] = df["house_sales"].shift(1).rolling(window=4, min_periods=1).mean()
+        df["house_sales_rolling_mean_4y"] = df["house_sales"].shift(1).rolling(window=16, min_periods=1).mean()
+        df["house_sales_rolling_mean_10y"] = df["house_sales"].shift(1).rolling(window=40, min_periods=1).mean()
         
         # Differences
         df["house_sales_diff_lag1_minus_lag2"] = df["house_sales_lag1"] - df["house_sales_lag2"]
@@ -147,18 +172,44 @@ class HouseFeatureEngineering:
         df["house_sales_ratio_lag1_over_lag4"] = df["house_sales_lag1"] / df["house_sales_lag4"].replace(0, np.nan)
         
         # --- Rolling Means for Other Variables ---
-        variables = ["hpi", "house_stock", "residential_investment", "ocr", "cpi", "gdp"]
+        # FIXED: Use shift(1) to avoid leakage for HPI and house_stock (which are used as base variables)
+        # For economic indicators (ocr, cpi, gdp, residential_investment), these are typically known
+        # in advance so we can use them without lag, but for consistency we'll lag them too
+        print("  - Creating lagged rolling means for all variables")
         
-        for var in variables:
+        # Variables that should definitely be lagged (target-related)
+        lag_required = ["hpi", "house_stock"]
+        for var in lag_required:
             if var in df.columns:
-                print(f"  - {var}: rolling means")
-                df[f"{var}_rolling_mean_1y"] = df[var].rolling(window=4, min_periods=1).mean()
-                df[f"{var}_rolling_mean_4y"] = df[var].rolling(window=16, min_periods=1).mean()
-                df[f"{var}_rolling_mean_10y"] = df[var].rolling(window=40, min_periods=1).mean()
+                print(f"  - {var}: lagged rolling means (no leakage)")
+                df[f"{var}_rolling_mean_1y"] = df[var].shift(1).rolling(window=4, min_periods=1).mean()
+                df[f"{var}_rolling_mean_4y"] = df[var].shift(1).rolling(window=16, min_periods=1).mean()
+                df[f"{var}_rolling_mean_10y"] = df[var].shift(1).rolling(window=40, min_periods=1).mean()
         
+        # Economic indicators - these can use current values as they're published in advance
+        # But for safety and consistency, we'll lag them by 1 quarter too
+        economic_vars = ["residential_investment", "ocr", "cpi", "gdp"]
+        for var in economic_vars:
+            if var in df.columns:
+                print(f"  - {var}: lagged rolling means")
+                df[f"{var}_rolling_mean_1y"] = df[var].shift(1).rolling(window=4, min_periods=1).mean()
+                df[f"{var}_rolling_mean_4y"] = df[var].shift(1).rolling(window=16, min_periods=1).mean()
+                df[f"{var}_rolling_mean_10y"] = df[var].shift(1).rolling(window=40, min_periods=1).mean()
+        
+        # --- Policy-period binary flags ---
+        # 1 during 2020-04-01..2020-09-30 (Q2–Q3 2020), else 0
+        q = pd.to_datetime(df["quarter"])
+        df["covid_lockdown_2020q2_q3"] = (
+            (q >= pd.Timestamp("2020-04-01")) & (q < pd.Timestamp("2020-10-01"))
+        ).astype(int)
+        # 1 during 2021-04-01..2022-12-31 (Q2 2021..Q4 2022), else 0
+        df["reopening_supply_2021q2_2022q4"] = (
+            (q >= pd.Timestamp("2021-04-01")) & (q < pd.Timestamp("2023-01-01"))
+        ).astype(int)
+
         print(f"\nTRANSFORM: Created {len(df.columns):,} total columns")
-        print(f"           Original: 8, Features: {len(df.columns) - 8}")
-        
+        print(f"           Original: 10, Features: {len(df.columns) - 10}")
+        print(f"           All rolling features use lagged values (no data leakage)")
         return df
 
     def load(self, df: pd.DataFrame) -> None:
@@ -235,6 +286,12 @@ class HouseFeatureEngineering:
             total = len(df)
             pct = (non_null / total * 100) if total > 0 else 0
             print(f"  {col:45s}: {non_null:4d} / {total:4d} ({pct:5.1f}%)")
+        
+        # Sample statistics for hpi_growth features
+        print("\nHPI growth feature statistics:")
+        hpi_growth_features = [c for c in feature_cols if c.startswith("hpi_growth")][:5]
+        if hpi_growth_features:
+            print(df[hpi_growth_features].describe().to_string())
         
         # Sample statistics for house_sales features
         print("\nHouse sales feature statistics (first few):")
