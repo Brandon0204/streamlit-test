@@ -20,7 +20,14 @@ class XGBoostTrainer(BaseTrainer):
     def fit(self, best_params: Dict) -> None:
         if self.X_train is None:
             raise ValueError("Call prepare_supervised() before fit()")
-        self.model = XGBRegressor(**best_params)
+        
+        # Force single-threaded mode for cloud
+        params_copy = best_params.copy()
+        params_copy['n_jobs'] = 1      # Single job
+        params_copy['nthread'] = 1     # Single thread  
+        params_copy['verbosity'] = 0   # Quiet mode
+        
+        self.model = XGBRegressor(**params_copy)
         self.model.fit(self.X_train, self.y_train)
 
     def predict_split(self):

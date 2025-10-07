@@ -579,7 +579,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
         st.markdown("##### Hyperparameters")
         xgb_params = st.text_area(
             "XGBoost Parameters (JSON)",
-            '{"n_estimators": 400, "max_depth": 4, "learning_rate": 0.05, "subsample": 0.9, "colsample_bytree": 0.9, "random_state": 42}',
+            '{"n_estimators": 100, "max_depth": 3, "learning_rate": 0.1, "n_jobs": 1, "nthread": 1, "random_state": 42}',
             height=120,
             help="Gradient boosting hyperparameters",
             key="xgb_params"
