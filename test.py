@@ -22,6 +22,7 @@ from xgboost_trainer import run_experiment as run_xgb
 from catboost_trainer import run_experiment as run_cat
 from randomforest_trainer import run_experiment as run_rf
 from elasticnet_trainer import run_experiment as run_en
+from lgbm_trainer import run_experiment as run_lgbm
 from predict import HPIPredictor
                 
 st.set_page_config(page_title="House Price Data", layout="wide")
@@ -486,7 +487,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
     with st.expander("⚙️ Model Configuration", expanded=True):
         # Model selection
         st.markdown("#### Select Models to Train")
-        model_cols = st.columns(5)
+        model_cols = st.columns(6)
         with model_cols[0]:
             use_ets = st.checkbox("📈 ETS (Univariate)", value=True)
         with model_cols[1]:
@@ -494,8 +495,10 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
         with model_cols[2]:
             use_cat = st.checkbox("🐱 CatBoost", value=True)
         with model_cols[3]:
-            use_rf = st.checkbox("🌲 RandomForest", value=True)
+            use_lgbm = st.checkbox("💡 LightGBM", value=True)
         with model_cols[4]:
+            use_rf = st.checkbox("🌲 RandomForest", value=True)
+        with model_cols[5]:
             use_en = st.checkbox("🎯 ElasticNet", value=True)
 
         st.divider()
@@ -551,7 +554,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
     st.markdown("#### Model-Specific Configuration")
     st.caption("Configure hyperparameters and features for each model independently")
     
-    config_tabs = st.tabs(["📈 ETS", "🌳 XGBoost", "🐱 CatBoost", "🌲 RandomForest", "🎯 ElasticNet"])
+    config_tabs = st.tabs(["📈 ETS", "🌳 XGBoost", "🐱 CatBoost", "💡 LightGBM", "🌲 RandomForest", "🎯 ElasticNet"])
 
     # Default features for supervised models
     default_features = [f for f in [
@@ -622,9 +625,34 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
         if cat_features:
             with st.expander("View selected features"):
                 st.write(", ".join(cat_features))
-    
-    # RandomForest Configuration
+
+    # LightGBM Configuration
     with config_tabs[3]:
+        st.markdown("##### Hyperparameters")
+        lgbm_params = st.text_area(
+            "LightGBM Parameters (JSON)",
+            '{"n_estimators": 1036, "learning_rate": 0.0699, "num_leaves": 39, "max_depth": 14, "subsample": 0.834, "colsample_bytree": 0.755, "reg_alpha": 0.00005, "reg_lambda": 0.0027, "n_jobs": 1}',
+            height=120,
+            help="LightGBM gradient boosting parameters",
+            key="lgbm_params"
+        )
+        
+        st.markdown("##### Feature Selection")
+        lgbm_features = st.multiselect(
+            "Select features for LightGBM",
+            options=available_features,
+            default=default_features,
+            help="Choose features for LightGBM model",
+            key="lgbm_features"
+        )
+        st.caption(f"Selected: **{len(lgbm_features)}** features")
+        
+        if lgbm_features:
+            with st.expander("View selected features"):
+                st.write(", ".join(lgbm_features))
+
+    # RandomForest Configuration
+    with config_tabs[4]:
         st.markdown("##### Hyperparameters")
         rf_params = st.text_area(
             "RandomForest Parameters (JSON)",
@@ -649,7 +677,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
                 st.write(", ".join(rf_features))
 
     # ElasticNet Configuration
-    with config_tabs[4]:
+    with config_tabs[5]:
         st.markdown("##### Hyperparameters")
         en_params = st.text_area(
             "ElasticNet Parameters (JSON)",
@@ -684,7 +712,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
 
     if go_train:
         # Validation
-        selected_models = [use_ets, use_xgb, use_cat, use_rf, use_en]
+        selected_models = [use_ets, use_xgb, use_cat, use_rf, use_en, use_lgbm]
         if not any(selected_models):
             st.warning("⚠️ Please select at least one model to train")
         elif use_xgb and not xgb_features:
@@ -695,6 +723,8 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
             st.warning("⚠️ RandomForest selected but no features chosen")
         elif use_en and not en_features:
             st.warning("⚠️ ElasticNet selected but no features chosen")
+        elif use_lgbm and not lgbm_features:
+            st.warning("⚠️ LightGBM selected but no features chosen")
         else:
             results = []
             charts = []
@@ -833,6 +863,59 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
                     st.success("✅ CatBoost: Training completed")
                 except Exception as e:
                     st.error(f"❌ CatBoost failed: {e}")
+                    with st.expander("Error details"):
+                        st.code(traceback.format_exc())
+            # Train LightGBM
+            if use_lgbm and lgbm_features:
+                current_model += 1
+                status_text.text(f"Training LightGBM ({current_model}/{models_to_train})...")
+                progress_bar.progress(current_model / models_to_train)
+                
+                try:
+                    p = json.loads(lgbm_params)
+                    r = run_lgbm(
+                        best_params=p, 
+                        feature_list=lgbm_features,
+                        test_size=test_size, 
+                        missing_strategy=missing_strategy
+                    )
+                    results.append({"model_name": "LightGBM", **r["metrics"]})
+                    charts.append(("LightGBM", r["figure"]))
+                    
+                    # Generate SHAP plot
+                    if show_shap and "trainer" in r:
+                        status_text.text(f"Generating SHAP summary plot for LightGBM...")
+                        try:
+                            trainer = r["trainer"]
+                            explainer = shap.TreeExplainer(trainer.model)
+                            shap_values = explainer.shap_values(trainer.X_test)
+                            
+                            fig_matplotlib, ax = plt.subplots(figsize=(10, max(6, len(lgbm_features) * 0.3)))
+                            shap.summary_plot(
+                                shap_values, 
+                                trainer.X_test, 
+                                feature_names=lgbm_features,
+                                show=False,
+                                plot_type="dot",
+                                color_bar=True,
+                                max_display=len(lgbm_features)
+                            )
+                            plt.title("LightGBM - SHAP Summary Plot", fontsize=14, pad=20)
+                            plt.xlabel("SHAP value (impact on model output)", fontsize=11)
+                            plt.tight_layout()
+                            
+                            buf = BytesIO()
+                            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+                            buf.seek(0)
+                            plt.close(fig_matplotlib)
+                            
+                            shap_plots.append(("LightGBM", buf))
+                        except Exception as shap_err:
+                            st.warning(f"Could not generate SHAP plot: {shap_err}")
+                    
+                    st.success("✅ LightGBM: Training completed")
+                except Exception as e:
+                    st.error(f"❌ LightGBM failed: {e}")
                     with st.expander("Error details"):
                         st.code(traceback.format_exc())
 
@@ -1255,7 +1338,7 @@ with col_center:
 
                     try:
                         lower_name = (model_name or "").lower()
-                        if any(k in lower_name for k in ["xgboost", "catboost", "randomforest"]):
+                        if any(k in lower_name for k in ["xgboost", "catboost", "randomforest", "lightgbm"]):
                             explainer = shap.TreeExplainer(model)
                             shap_values = explainer.shap_values(X_pred)  # (n_samples, n_features)
                             expected_value = explainer.expected_value
