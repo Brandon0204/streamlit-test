@@ -1,4 +1,3 @@
-# test.py - House Data Viewer, Downloader & EDA
 import os
 import sys
 import json
@@ -1090,10 +1089,10 @@ col_left, col_center, col_right = st.columns([1, 6, 1])
 
 with col_center:
     st.markdown("""
-    This tool will:
-    1. 🏆 Select the best performing model from your training history
+    This will:
+    1. 🏆 Select the best performing model from training history
     2. 📊 Train it on all available historical data
-    3. 🎯 Predict HPI growth for the latest quarter(s) with missing HPI values
+    3. 🎯 Predict HPI growth for the latest quarter(s)
     4. 📈 Provide 95% confidence intervals for predictions
     """)
     

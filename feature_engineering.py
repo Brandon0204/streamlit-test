@@ -1,4 +1,3 @@
-# feature_engineering.py — Feature engineering for house price data
 from __future__ import annotations
 
 import os
@@ -7,11 +6,9 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-# from dotenv import load_dotenv
 from supabase import create_client, Client
 
 
-# Reuse from ingest_h.py if you already have it:
 def _get_secret(path: str, default: Optional[str] = None) -> Optional[str]:
     """
     Read nested keys from streamlit secrets as 'section.key' (e.g., 'supabase.url').
@@ -63,7 +60,7 @@ class HouseFeatureEngineering:
         clean_table: Optional[str] = None,
         feature_table: Optional[str] = None,
     ):
-        # Prefer kwargs → st.secrets → env
+        
         self.supabase_url = supabase_url or _get_secret("supabase.url")
         self.supabase_key = supabase_key or _get_secret("supabase.key")
         self.service_role_key = service_role_key or _get_secret("supabase.service_role_key")
@@ -73,7 +70,6 @@ class HouseFeatureEngineering:
                 "Supabase URL/Key missing. Provide via kwargs, st.secrets['supabase'], or environment."
             )
 
-        # Table locations (optional; defaults if not provided anywhere)
         self.schema = (schema
                        or _get_secret("tables.schema", "public"))
         self.clean_table = (clean_table
@@ -81,7 +77,6 @@ class HouseFeatureEngineering:
         self.feature_table = (feature_table
                               or _get_secret("tables.feature", "feature_house"))
 
-        # Clients
         self.sb: Client = create_client(self.supabase_url, self.supabase_key)
         self.sb_rw: Client = (
             create_client(self.supabase_url, self.service_role_key)
@@ -136,7 +131,7 @@ class HouseFeatureEngineering:
         df["hpi_growth_lag4"] = df["hpi_growth"].shift(4)
         df["hpi_growth_lag16"] = df["hpi_growth"].shift(16)  # 4 years ago
         
-        # Rolling means - FIXED: Use shift(1) to avoid leakage
+        # Rolling means - Use shift(1) to avoid leakage
         # These now use lagged values only (not including current period)
         df["hpi_growth_rolling_mean_1y"] = df["hpi_growth"].shift(1).rolling(window=4, min_periods=1).mean()
         df["hpi_growth_rolling_mean_4y"] = df["hpi_growth"].shift(1).rolling(window=16, min_periods=1).mean()
@@ -158,7 +153,7 @@ class HouseFeatureEngineering:
         df["house_sales_lag4"] = df["house_sales"].shift(4)
         df["house_sales_lag16"] = df["house_sales"].shift(16)  # 4 years ago
         
-        # Rolling means - FIXED: Use shift(1) to avoid leakage
+        # Rolling means - Use shift(1) to avoid leakage
         df["house_sales_rolling_mean_1y"] = df["house_sales"].shift(1).rolling(window=4, min_periods=1).mean()
         df["house_sales_rolling_mean_4y"] = df["house_sales"].shift(1).rolling(window=16, min_periods=1).mean()
         df["house_sales_rolling_mean_10y"] = df["house_sales"].shift(1).rolling(window=40, min_periods=1).mean()
@@ -172,9 +167,6 @@ class HouseFeatureEngineering:
         df["house_sales_ratio_lag1_over_lag4"] = df["house_sales_lag1"] / df["house_sales_lag4"].replace(0, np.nan)
         
         # --- Rolling Means for Other Variables ---
-        # FIXED: Use shift(1) to avoid leakage for HPI and house_stock (which are used as base variables)
-        # For economic indicators (ocr, cpi, gdp, residential_investment), these are typically known
-        # in advance so we can use them without lag, but for consistency we'll lag them too
         print("  - Creating lagged rolling means for all variables")
         
         # Variables that should definitely be lagged (target-related)

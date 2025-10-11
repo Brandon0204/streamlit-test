@@ -1,14 +1,3 @@
-# ingest_h.py — NZ house-price ETL (quarterly)
-# extract -> (transform) -> (load)
-#
-# Requirements:
-#   pip install supabase pandas openpyxl python-dotenv
-#
-# Env:
-#   SUPABASE_URL=...
-#   SUPABASE_ANON_KEY=...                 # or SERVICE_ROLE if you prefer
-#   SUPABASE_BUCKET=project3bucket        # default if unset
-
 from __future__ import annotations
 
 import os
@@ -16,21 +5,19 @@ from io import BytesIO
 from typing import Optional, Dict
 import numpy as np
 import pandas as pd
-# from dotenv import load_dotenv
 from supabase import create_client, Client
 
 from typing import Optional
 import os
 from supabase import create_client, Client
+import streamlit as st
 
 def _get_secret(path: str, default: Optional[str] = None) -> Optional[str]:
     """
     Read nested keys from streamlit secrets as 'section.key' (e.g., 'supabase.url').
     Falls back to env var using LAST segment uppercased with SUPABASE_ prefix when sensible.
     """
-    # 1) Try st.secrets if available
     try:
-        import streamlit as st  # only available on Streamlit Cloud
         cur = st.secrets
         for key in path.split("."):
             if key in cur:
@@ -43,8 +30,7 @@ def _get_secret(path: str, default: Optional[str] = None) -> Optional[str]:
     except Exception:
         pass
 
-    # 2) Try environment variables
-    # Map known secret paths to conventional env names
+    # Try environment variables
     ENV_MAP = {
         "supabase.url": "SUPABASE_URL",
         "supabase.key": "SUPABASE_ANON_KEY",
@@ -92,7 +78,7 @@ class HousePriceETL:
         gdp_csv_path: Optional[str] = None,
         service_role_key: Optional[str] = None,
     ):
-        # Prefer kwargs → st.secrets → env
+        
         self.supabase_url = (supabase_url
                              or _get_secret("supabase.url"))
         self.supabase_key = (supabase_key
@@ -111,10 +97,8 @@ class HousePriceETL:
         self.cpi_csv_path = (cpi_csv_path or _get_secret("paths.cpi_csv", self.CPI_CSV_PATH))
         self.gdp_csv_path = (gdp_csv_path or _get_secret("paths.gdp_csv", self.GDP_CSV_PATH))
 
-        # Anon client (read / writes allowed if your RLS permits)
+        # Anon client 
         self.sb: Client = create_client(self.supabase_url, self.supabase_key)
-
-        # RW client if you’ve supplied service-role and your code needs it (e.g., list buckets, bypass RLS)
         self.sb_rw: Client = create_client(self.supabase_url, self.service_role_key) if self.service_role_key else self.sb
 
 
@@ -477,7 +461,7 @@ def main():
         pct_missing = (total_missing / total_rows) * 100
         print(f"{col:25s}: {total_missing:4d} / {total_rows:4d} missing ({pct_missing:5.1f}%)")
     
-    # Load (placeholder)
+    # Load
     print("\n" + "="*80)
     etl.load(combined)
 

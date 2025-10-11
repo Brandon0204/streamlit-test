@@ -1,4 +1,3 @@
-# trainer.py
 from __future__ import annotations
 import os, json
 from abc import ABC, abstractmethod
@@ -186,7 +185,7 @@ class BaseTrainer(ABC):
         train_r2 = float(r2_score(self.y_train, y_train_pred))
         test_r2 = float(r2_score(self.y_test, y_test_pred))
         
-        # Warn about negative R²
+        # Warn about negative R2
         if test_r2 < 0:
             print(f"WARNING: Test R² is negative ({test_r2:.4f}). Model performs worse than baseline!")
             print("         Consider: more features, different hyperparameters, or longer training data")
@@ -236,7 +235,6 @@ class BaseTrainer(ABC):
         ))
 
         # Test actual + forecast
-        # KEY FIX: Prepend the last train point to connect the lines
         if len(x_train) > 0 and len(x_test) > 0:
             # Get last train values
             if hasattr(x_train, 'iloc'):
@@ -247,7 +245,6 @@ class BaseTrainer(ABC):
             last_y_train = self.y_train.iloc[-1] if hasattr(self.y_train, 'iloc') else self.y_train[-1]
             last_y_train_pred = y_train_pred[-1]
             
-            # Convert to list and prepend
             x_test_list = list(x_test) if not isinstance(x_test, list) else x_test
             x_test_connected = [last_x_train] + x_test_list
             y_test_actual_connected = [last_y_train] + list(self.y_test)

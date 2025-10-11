@@ -1,14 +1,11 @@
-# xgboost_trainer.py
 from __future__ import annotations
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 from xgboost import XGBRegressor
-from trainer import BaseTrainer, _get_secret  # NEW
+from trainer import BaseTrainer, _get_secret
 
 DEFAULT_FEATURES = [
-    # keep your preferred features here:
     "house_sales", "hpi", "house_stock",
-    # add engineered features already existing in feature_house if any...
 ]
 
 class XGBoostTrainer(BaseTrainer):

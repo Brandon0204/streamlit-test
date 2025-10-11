@@ -1,4 +1,3 @@
-# predict.py - Production prediction for latest HPI growth
 from __future__ import annotations
 import os
 import json

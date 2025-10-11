@@ -1,9 +1,8 @@
-# ets_trainer.py
 from __future__ import annotations
 from typing import Dict, Optional
 import numpy as np
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
-from trainer import BaseTrainer, _get_secret  # NEW
+from trainer import BaseTrainer, _get_secret
 
 class ETSTrainer(BaseTrainer):
     model_name = "ets"
@@ -33,7 +32,7 @@ def run_experiment(
     best_params: Dict, 
     test_size: float = 0.2, 
     missing_strategy: str = "drop",
-    feature_list: Optional[List[str]] = None  # NEW - for consistency
+    feature_list: Optional[List[str]] = None
 ):
     t = ETSTrainer()
     df = t.load_feature_house()
