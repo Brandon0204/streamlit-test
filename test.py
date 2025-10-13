@@ -20,6 +20,7 @@ from io import BytesIO
 from ets_trainer import run_experiment as run_ets
 from xgboost_trainer import run_experiment as run_xgb
 from catboost_trainer import run_experiment as run_cat
+from ridge_trainer import run_experiment as run_ridge
 from randomforest_trainer import run_experiment as run_rf
 from elasticnet_trainer import run_experiment as run_en
 from lgbm_trainer import run_experiment as run_lgbm
@@ -487,7 +488,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
     with st.expander("⚙️ Model Configuration", expanded=True):
         # Model selection
         st.markdown("#### Select Models to Train")
-        model_cols = st.columns(6)
+        model_cols = st.columns(7)
         with model_cols[0]:
             use_ets = st.checkbox("📈 ETS (Univariate)", value=True)
         with model_cols[1]:
@@ -500,6 +501,8 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
             use_rf = st.checkbox("🌲 RandomForest", value=True)
         with model_cols[5]:
             use_en = st.checkbox("🎯 ElasticNet", value=True)
+        with model_cols[6]:
+            use_ridge = st.checkbox("📐 Ridge", value=True)
 
         st.divider()
         
@@ -554,7 +557,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
     st.markdown("#### Model-Specific Configuration")
     st.caption("Configure hyperparameters and features for each model independently")
     
-    config_tabs = st.tabs(["📈 ETS", "🌳 XGBoost", "🐱 CatBoost", "💡 LightGBM", "🌲 RandomForest", "🎯 ElasticNet"])
+    config_tabs = st.tabs(["📈 ETS", "🌳 XGBoost", "🐱 CatBoost", "💡 LightGBM", "🌲 RandomForest", "🎯 ElasticNet", "📐 Ridge"])
 
     # Default features for supervised models
     default_features = [f for f in [
@@ -701,6 +704,31 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
             with st.expander("View selected features"):
                 st.write(", ".join(en_features))
 
+    # Ridge Configuration
+    with config_tabs[6]:
+        st.markdown("##### Hyperparameters")
+        ridge_params = st.text_area(
+            "Ridge Parameters (JSON)",
+            '{"alpha": 1.0, "max_iter": 1000, "random_state": 42}',
+            height=100,
+            help="Ridge regression parameters. alpha=regularization strength (higher = more regularization)",
+            key="ridge_params"
+        )
+        
+        st.markdown("##### Feature Selection")
+        ridge_features = st.multiselect(
+            "Select features for Ridge",
+            options=available_features,
+            default=default_features,
+            help="Choose features for Ridge regression model",
+            key="ridge_features"
+        )
+        st.caption(f"Selected: **{len(ridge_features)}** features")
+        
+        if ridge_features:
+            with st.expander("View selected features"):
+                st.write(", ".join(ridge_features))
+
     # Training button
     st.markdown("---")
     go_train = st.button(
@@ -725,6 +753,8 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
             st.warning("⚠️ ElasticNet selected but no features chosen")
         elif use_lgbm and not lgbm_features:
             st.warning("⚠️ LightGBM selected but no features chosen")
+        elif use_ridge and not ridge_features:  # ADD THIS
+            st.warning("⚠️ Ridge selected but no features chosen")
         else:
             results = []
             charts = []
@@ -1027,6 +1057,62 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
                     st.error(f"❌ ElasticNet failed: {e}")
                     with st.expander("Error details"):
                         st.code(traceback.format_exc())            
+
+            # Train Ridge
+            if use_ridge and ridge_features:
+                current_model += 1
+                status_text.text(f"Training Ridge ({current_model}/{models_to_train})...")
+                progress_bar.progress(current_model / models_to_train)
+                
+                try:
+                    p = json.loads(ridge_params)
+                    r = run_ridge(
+                        best_params=p, 
+                        feature_list=ridge_features,
+                        test_size=test_size, 
+                        missing_strategy=missing_strategy
+                    )
+                    results.append({"model_name": "Ridge", **r["metrics"]})
+                    charts.append(("Ridge", r["figure"]))
+                    
+                    # SHAP for Ridge using LinearExplainer
+                    if show_shap and "trainer" in r:
+                        status_text.text(f"Generating SHAP summary plot for Ridge...")
+                        try:                            
+                            trainer = r["trainer"]
+                            
+                            # Use LinearExplainer for Ridge
+                            explainer = shap.LinearExplainer(trainer.model, trainer.X_train)
+                            shap_values = explainer.shap_values(trainer.X_test)
+                            
+                            fig_matplotlib, ax = plt.subplots(figsize=(10, max(6, len(ridge_features) * 0.3)))
+                            shap.summary_plot(
+                                shap_values, 
+                                trainer.X_test, 
+                                feature_names=ridge_features,
+                                show=False,
+                                plot_type="dot",
+                                color_bar=True,
+                                max_display=len(ridge_features)
+                            )
+                            plt.title("Ridge - SHAP Summary Plot", fontsize=14, pad=20)
+                            plt.xlabel("SHAP value (impact on model output)", fontsize=11)
+                            plt.tight_layout()
+                            
+                            buf = BytesIO()
+                            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+                            buf.seek(0)
+                            plt.close(fig_matplotlib)
+                            
+                            shap_plots.append(("Ridge", buf))
+                        except Exception as shap_err:
+                            st.warning(f"Could not generate SHAP plot: {shap_err}")
+                    
+                    st.success("✅ Ridge: Training completed")
+                except Exception as e:
+                    st.error(f"❌ Ridge failed: {e}")
+                    with st.expander("Error details"):
+                        st.code(traceback.format_exc())
 
             # Clear progress indicators
             progress_bar.empty()
@@ -1345,11 +1431,10 @@ with col_center:
                             if not np.isscalar(expected_value):
                                 # Some versions return an array; take scalar for regression
                                 expected_value = float(np.asarray(expected_value).reshape(-1)[0])
-                        elif "elasticnet" in lower_name:
-                            explainer = shap.LinearExplainer(model, X_pred)  # background=X_pred is fine here
+                        elif any(k in lower_name for k in ["elasticnet", "ridge"]):  # CHANGE THIS LINE
+                            explainer = shap.LinearExplainer(model, X_pred)
                             shap_values = explainer.shap_values(X_pred)
                             expected_value = explainer.expected_value
-                            # LinearExplainer can return vector expected_value; coerce to scalar
                             if not np.isscalar(expected_value):
                                 expected_value = float(np.asarray(expected_value).reshape(-1)[0])
                         else:
