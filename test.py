@@ -24,6 +24,8 @@ from ridge_trainer import run_experiment as run_ridge
 from randomforest_trainer import run_experiment as run_rf
 from elasticnet_trainer import run_experiment as run_en
 from lgbm_trainer import run_experiment as run_lgbm
+from ols_trainer import run_experiment as run_ols
+from lasso_trainer import run_experiment as run_lasso
 from predict import HPIPredictor
                 
 st.set_page_config(page_title="House Price Data", layout="wide")
@@ -489,7 +491,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
     with st.expander("⚙️ Model Configuration", expanded=True):
         # Model selection
         st.markdown("#### Select Models to Train")
-        model_cols = st.columns(7)
+        model_cols = st.columns(9)
         with model_cols[0]:
             use_ets = st.checkbox("📈 ETS (Univariate)", value=True)
         with model_cols[1]:
@@ -504,6 +506,10 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
             use_en = st.checkbox("🎯 ElasticNet", value=True)
         with model_cols[6]:
             use_ridge = st.checkbox("📐 Ridge", value=True)
+        with model_cols[7]:
+            use_lasso = st.checkbox("🎯 Lasso", value=True)
+        with model_cols[8]:
+            use_ols = st.checkbox("📊 OLS", value=True) 
 
         st.divider()
         
@@ -602,8 +608,10 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
     
     st.caption(f"📊 Showing **{len(filtered_available)}** of **{len(available_features)}** features")
     
-    config_tabs = st.tabs(["📈 ETS", "🌳 XGBoost", "🐱 CatBoost", "💡 LightGBM", "🌲 RandomForest", "🎯 ElasticNet", "📐 Ridge"])
-
+    config_tabs = st.tabs([
+        "📈 ETS", "🌳 XGBoost", "🐱 CatBoost", "💡 LightGBM", 
+        "🌲 RandomForest", "🎯 ElasticNet", "📐 Ridge", "🎯 Lasso", "📊 OLS"
+    ])
     # Default features for supervised models
     default_features = [f for f in [
         'hpi_growth_lag1', 'hpi_growth_lag2', 'hpi_growth_lag4',
@@ -774,6 +782,56 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
             with st.expander("View selected features"):
                 st.write(", ".join(ridge_features))
 
+    # Lasso Configuration
+    with config_tabs[7]:
+        st.markdown("##### Hyperparameters")
+        lasso_params = st.text_area(
+            "Lasso Parameters (JSON)",
+            '{"alpha": 1.0, "max_iter": 1000, "random_state": 42}',
+            height=100,
+            help="Lasso regression parameters. alpha=regularization strength (higher = more sparsity/feature selection)",
+            key="lasso_params"
+        )
+        
+        st.markdown("##### Feature Selection")
+        lasso_features = st.multiselect(
+            "Select features for Lasso",
+            options=filtered_available,
+            default=default_features,
+            help="Choose features for Lasso regression model",
+            key="lasso_features"
+        )
+        st.caption(f"Selected: **{len(lasso_features)}** features")
+        
+        if lasso_features:
+            with st.expander("View selected features"):
+                st.write(", ".join(lasso_features))
+
+    # OLS Configuration
+    with config_tabs[8]:
+        st.markdown("##### Hyperparameters")
+        ols_params = st.text_area(
+            "OLS Parameters (JSON)",
+            '{}',
+            height=80,
+            help="Ordinary Least Squares - no hyperparameters needed. Uses statsmodels.OLS",
+            key="ols_params"
+        )
+        
+        st.markdown("##### Feature Selection")
+        ols_features = st.multiselect(
+            "Select features for OLS",
+            options=filtered_available,
+            default=default_features,
+            help="Choose features for OLS regression model",
+            key="ols_features"
+        )
+        st.caption(f"Selected: **{len(ols_features)}** features")
+        
+        if ols_features:
+            with st.expander("View selected features"):
+                st.write(", ".join(ols_features))
+
     # Training button
     st.markdown("---")
     go_train = st.button(
@@ -785,7 +843,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
 
     if go_train:
         # Validation
-        selected_models = [use_ets, use_xgb, use_cat, use_rf, use_en, use_lgbm, use_ridge]
+        selected_models = [use_ets, use_xgb, use_cat, use_rf, use_en, use_lgbm, use_ridge, use_lasso, use_ols]
         if not any(selected_models):
             st.warning("⚠️ Please select at least one model to train")
         elif use_xgb and not xgb_features:
@@ -800,6 +858,10 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
             st.warning("⚠️ LightGBM selected but no features chosen")
         elif use_ridge and not ridge_features:
             st.warning("⚠️ Ridge selected but no features chosen")
+        elif use_lasso and not lasso_features:
+            st.warning("⚠️ Lasso selected but no features chosen")
+        elif use_ols and not ols_features:
+            st.warning("⚠️ OLS selected but no features chosen")
         else:
             results = []
             charts = []
@@ -1156,6 +1218,116 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
                     st.success("✅ Ridge: Training completed")
                 except Exception as e:
                     st.error(f"❌ Ridge failed: {e}")
+                    with st.expander("Error details"):
+                        st.code(traceback.format_exc())
+
+            # Train Lasso
+            if use_lasso and lasso_features:
+                current_model += 1
+                status_text.text(f"Training Lasso ({current_model}/{models_to_train})...")
+                progress_bar.progress(current_model / models_to_train)
+                
+                try:
+                    p = json.loads(lasso_params)
+                    r = run_lasso(
+                        best_params=p, 
+                        feature_list=lasso_features,
+                        test_size=test_size, 
+                        missing_strategy=missing_strategy
+                    )
+                    results.append({"model_name": "Lasso", **r["metrics"]})
+                    charts.append(("Lasso", r["figure"]))
+                    
+                    # SHAP for Lasso using LinearExplainer
+                    if show_shap and "trainer" in r:
+                        status_text.text(f"Generating SHAP summary plot for Lasso...")
+                        try:                            
+                            trainer = r["trainer"]
+                            
+                            explainer = shap.LinearExplainer(trainer.model, trainer.X_train)
+                            shap_values = explainer.shap_values(trainer.X_test)
+                            
+                            fig_matplotlib, ax = plt.subplots(figsize=(10, max(6, len(lasso_features) * 0.3)))
+                            shap.summary_plot(
+                                shap_values, 
+                                trainer.X_test, 
+                                feature_names=lasso_features,
+                                show=False,
+                                plot_type="dot",
+                                color_bar=True,
+                                max_display=len(lasso_features)
+                            )
+                            plt.title("Lasso - SHAP Summary Plot", fontsize=14, pad=20)
+                            plt.xlabel("SHAP value (impact on model output)", fontsize=11)
+                            plt.tight_layout()
+                            
+                            buf = BytesIO()
+                            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+                            buf.seek(0)
+                            plt.close(fig_matplotlib)
+                            
+                            shap_plots.append(("Lasso", buf))
+                        except Exception as shap_err:
+                            st.warning(f"Could not generate SHAP plot: {shap_err}")
+                    
+                    st.success("✅ Lasso: Training completed")
+                except Exception as e:
+                    st.error(f"❌ Lasso failed: {e}")
+                    with st.expander("Error details"):
+                        st.code(traceback.format_exc())
+
+            # Train OLS
+            if use_ols and ols_features:
+                current_model += 1
+                status_text.text(f"Training OLS ({current_model}/{models_to_train})...")
+                progress_bar.progress(current_model / models_to_train)
+                
+                try:
+                    p = json.loads(ols_params)
+                    r = run_ols(
+                        best_params=p, 
+                        feature_list=ols_features,
+                        test_size=test_size, 
+                        missing_strategy=missing_strategy
+                    )
+                    results.append({"model_name": "OLS", **r["metrics"]})
+                    charts.append(("OLS", r["figure"]))
+                    
+                    # SHAP for OLS using LinearExplainer
+                    if show_shap and "trainer" in r:
+                        status_text.text(f"Generating SHAP summary plot for OLS...")
+                        try:                            
+                            trainer = r["trainer"]
+                            
+                            explainer = shap.LinearExplainer(trainer.model, trainer.X_train)
+                            shap_values = explainer.shap_values(trainer.X_test)
+                            
+                            fig_matplotlib, ax = plt.subplots(figsize=(10, max(6, len(ols_features) * 0.3)))
+                            shap.summary_plot(
+                                shap_values, 
+                                trainer.X_test, 
+                                feature_names=ols_features,
+                                show=False,
+                                plot_type="dot",
+                                color_bar=True,
+                                max_display=len(ols_features)
+                            )
+                            plt.title("OLS - SHAP Summary Plot", fontsize=14, pad=20)
+                            plt.xlabel("SHAP value (impact on model output)", fontsize=11)
+                            plt.tight_layout()
+                            
+                            buf = BytesIO()
+                            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+                            buf.seek(0)
+                            plt.close(fig_matplotlib)
+                            
+                            shap_plots.append(("OLS", buf))
+                        except Exception as shap_err:
+                            st.warning(f"Could not generate SHAP plot: {shap_err}")
+                    
+                    st.success("✅ OLS: Training completed")
+                except Exception as e:
+                    st.error(f"❌ OLS failed: {e}")
                     with st.expander("Error details"):
                         st.code(traceback.format_exc())
 
