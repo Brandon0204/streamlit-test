@@ -26,20 +26,22 @@
 
 ---
 
-### Ming - Tree-Based Model Specialist
+### Ming - Modeling & Explainability (Time-Series CV & XAI)
 **Primary Responsibilities:**
-- **Tree-Based Model Implementation**: Developed and optimized tree-based models including Random Forest and CatBoost
-- **Model Comparison**: Conducted comparative analysis between different tree-based approaches
-- **Feature Importance Analysis**: Analyzed feature contributions specific to tree-based algorithms
-- **Performance Tuning**: Optimized hyperparameters for ensemble tree methods
+- **End-to-end Modeling (leakage-safe)**: Built a reproducible pipeline to predict `hpi` with strict anti-leakage design (lag-based features only for target-related signals; conservative handling of rolling stats that directly depend on same-period `hpi`).
+- **Time-Series Cross-Validation**: Implemented `TimeSeriesSplit` with unified evaluation (RMSE / MAE / R²), fixed random seeds, and consistent preprocessing.
+- **Model Development & Comparison**: Implemented and compared baseline Ridge vs. tree models including Random Forest, LightGBM, and XGBoost under the same CV protocol.
+- **Hyperparameter Optimization**: Used Optuna to tune LightGBM with early stopping and pruners; logged trials and selected the best configuration for artifact export.
+- **Model Explainability (XAI)**: Produced SHAP global/dep/local analyses and PDP/ICE visuals to interpret feature effects and non-linear patterns.
 
 **Key Deliverables:**
-- Random Forest model implementation and evaluation
-- CatBoost model development (building on Xuanhui's initial work)
-- Tree-based model performance comparison documentation
-- Feature importance analysis for tree-based methods
+- Reproducible notebook `Ming_Zhang_model.ipynb` covering data processing, CV, model comparison, tuning, and interpretation.
+- Optuna study artifacts: `artifacts/optuna_trials_lgbm.csv`, `artifacts/plots/optuna_history_lgbm.png`.
+- Evaluation metrics: `artifacts/metrics.json` with RMSE/MAE/R² across models.
+- Serialized example model: `artifacts/best_lgbm.pkl` (best LightGBM from Optuna) and feature manifest `artifacts/feature_list.csv`.
+- XAI figures in `artifacts/plots/`: SHAP summary (dot/bar), dependence plots, local explanation bar, PDP/ICE.
 
-**Note**: While Xuanhui provided initial tree-based model notebooks, Ming expanded and specialized in this domain with additional models and deeper analysis.
+**Note**: Under strict time-series CV and leakage control, the Ridge baseline proved more stable than tree models on RMSE/MAE. Recommendation was to use Ridge as default for demo while retaining tree models (include LightGBM) for exploration and explanation in the Streamlit app.
 
 ---
 
