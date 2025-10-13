@@ -226,8 +226,16 @@ class HPIPredictor:
             
             # Point predictions - handle OLS separately
             if model_name.lower() == 'ols':
-                # OLS needs constant added
-                X_pred_with_const = sm.add_constant(X_pred)
+                # OLS needs constant added - ensure it has the same column structure
+                # The model.model.exog_names tells us what columns it expects
+                X_pred_with_const = sm.add_constant(X_pred, has_constant='add')
+                
+                # Reorder columns to match training order if needed
+                if hasattr(model.model, 'exog_names'):
+                    expected_cols = model.model.exog_names
+                    # Ensure columns match exactly
+                    X_pred_with_const = X_pred_with_const[expected_cols]
+                
                 point_preds = model.predict(X_pred_with_const)
             else:
                 point_preds = model.predict(X_pred)
