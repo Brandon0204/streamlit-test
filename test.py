@@ -244,8 +244,13 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
     
     # Prepare data for feature importance
     target_col = "hpi_growth"
-    exclude_cols = ["quarter", "year", "quarter_num", target_col, 
-                   "house_sales", "hpi", "house_stock"]  # Exclude to prevent leakage
+    exclude_cols = [
+        "quarter",  # Date column - used for indexing, not a feature
+        "hpi_growth",  # Target variable - what we're predicting
+        # Exclude raw current-period values to prevent data leakage
+        "house_sales", "hpi", "house_stock", 
+        "residential_investment"
+    ]  # Exclude to prevent leakage
     
     # Get feature columns (numeric only)
     feature_cols = [col for col in df.select_dtypes(include='number').columns 
