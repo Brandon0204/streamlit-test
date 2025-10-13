@@ -173,7 +173,7 @@ class HouseFeatureEngineering:
         lag_required = ["hpi", "house_stock"]
         for var in lag_required:
             if var in df.columns:
-                print(f"  - {var}: lagged rolling means (no leakage)")
+                print(f"    - {var}: lagged rolling means (no leakage)")
                 df[f"{var}_rolling_mean_1y"] = df[var].shift(1).rolling(window=4, min_periods=1).mean()
                 df[f"{var}_rolling_mean_4y"] = df[var].shift(1).rolling(window=16, min_periods=1).mean()
                 df[f"{var}_rolling_mean_10y"] = df[var].shift(1).rolling(window=40, min_periods=1).mean()
@@ -183,25 +183,48 @@ class HouseFeatureEngineering:
         economic_vars = ["residential_investment", "ocr", "cpi", "gdp"]
         for var in economic_vars:
             if var in df.columns:
-                print(f"  - {var}: lagged rolling means")
+                print(f"    - {var}: lagged rolling means")
                 df[f"{var}_rolling_mean_1y"] = df[var].shift(1).rolling(window=4, min_periods=1).mean()
                 df[f"{var}_rolling_mean_4y"] = df[var].shift(1).rolling(window=16, min_periods=1).mean()
                 df[f"{var}_rolling_mean_10y"] = df[var].shift(1).rolling(window=40, min_periods=1).mean()
         
+        # --- Scaled Features (Z-Score Normalization) ---
+        print("  - Creating scaled features (z-score normalization)...")
+        scale_vars = ['hpi', 'house_sales', 'gdp', 'house_stock', 
+                    'residential_investment', 'ocr', 'cpi']
+        
+        for var in scale_vars:
+            if var in df.columns:
+                mean = df[var].mean()
+                std = df[var].std()
+                if std > 0:  # Avoid division by zero
+                    df[f"{var}_scaled"] = (df[var] - mean) / std
+                    print(f"    - {var}_scaled: mean={mean:.2f}, std={std:.2f}")
+                else:
+                    df[f"{var}_scaled"] = 0.0
+                    print(f"    - {var}_scaled: constant value (std=0), set to 0")
+        
         # --- Policy-period binary flags ---
+        print("  - Creating policy period flags...")
         # 1 during 2020-04-01..2020-09-30 (Q2–Q3 2020), else 0
         q = pd.to_datetime(df["quarter"])
         df["covid_lockdown_2020q2_q3"] = (
             (q >= pd.Timestamp("2020-04-01")) & (q < pd.Timestamp("2020-10-01"))
         ).astype(int)
+        print(f"    - covid_lockdown_2020q2_q3: {df['covid_lockdown_2020q2_q3'].sum()} quarters flagged")
+        
         # 1 during 2021-04-01..2022-12-31 (Q2 2021..Q4 2022), else 0
         df["reopening_supply_2021q2_2022q4"] = (
             (q >= pd.Timestamp("2021-04-01")) & (q < pd.Timestamp("2023-01-01"))
         ).astype(int)
+        print(f"    - reopening_supply_2021q2_2022q4: {df['reopening_supply_2021q2_2022q4'].sum()} quarters flagged")
 
         print(f"\nTRANSFORM: Created {len(df.columns):,} total columns")
-        print(f"           Original: 10, Features: {len(df.columns) - 10}")
-        print(f"           All rolling features use lagged values (no data leakage)")
+        print(f"           Original: 10, Engineered: {len(df.columns) - 10}")
+        print(f"           - Scaled features: {len(scale_vars)}")
+        print(f"           - Policy flags: 2")
+        print(f"           - All rolling features use lagged values (no data leakage)")
+        
         return df
 
     def load(self, df: pd.DataFrame) -> None:

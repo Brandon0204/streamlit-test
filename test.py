@@ -484,6 +484,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
     diff_features = [f for f in available_features if '_diff_' in f]
     ratio_features = [f for f in available_features if '_ratio_' in f]
     policy_features = [f for f in available_features if 'covid' in f or 'reopening' in f]
+    scaled_features = [f for f in available_features if '_scaled' in f]
 
     with st.expander("⚙️ Model Configuration", expanded=True):
         # Model selection
@@ -539,7 +540,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
         
         # Feature info box
         with st.expander("ℹ️ Available Feature Categories"):
-            info_cols = st.columns(5)
+            info_cols = st.columns(6)
             with info_cols[0]:
                 st.metric("Lag Features", len(lag_features))
             with info_cols[1]:
@@ -550,12 +551,56 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
                 st.metric("Ratio Features", len(ratio_features))
             with info_cols[4]:
                 st.metric("Policy Features", len(policy_features))
+            with info_cols[5]:
+                st.metric("Scaled Features", len(scaled_features))
 
     # ========================================
     # Per-Model Configuration Tabs
     # ========================================
     st.markdown("#### Model-Specific Configuration")
     st.caption("Configure hyperparameters and features for each model independently")
+
+    st.markdown("##### 🎛️ Feature Filter")
+    st.caption("Filter available features to make selection easier")
+    
+    filter_cols = st.columns([1, 1, 1, 1, 1])
+    
+    with filter_cols[0]:
+        show_lag = st.checkbox("Lag", value=True, key="filter_lag", 
+                              help="Features with time lags (_lag1, _lag2, etc.)")
+    with filter_cols[1]:
+        show_rolling = st.checkbox("Rolling", value=True, key="filter_rolling",
+                                   help="Rolling mean features (_rolling_mean_1y, etc.)")
+    with filter_cols[2]:
+        show_diff = st.checkbox("Diff/Ratio", value=True, key="filter_diff",
+                               help="Difference and ratio features")
+    with filter_cols[3]:
+        show_policy = st.checkbox("Policy", value=True, key="filter_policy",
+                                 help="COVID and reopening period flags")
+    with filter_cols[4]:
+        show_scaled = st.checkbox("Scaled", value=True, key="filter_scaled",
+                                 help="Z-score normalized features (_scaled)")
+    
+    # Filter available_features based on checkboxes
+    filtered_available = []
+    for f in available_features:
+        include = False
+        
+        if show_scaled and f.endswith('_scaled'):
+            include = True
+        elif show_policy and ('covid' in f or 'reopening' in f):
+            include = True
+        elif show_diff and ('_diff_' in f or '_ratio_' in f):
+            include = True
+        elif show_rolling and '_rolling_' in f:
+            include = True
+        elif show_lag and '_lag' in f and '_rolling_' not in f:  # lag but not rolling
+            include = True
+        
+        if include:
+            filtered_available.append(f)
+    
+    st.caption(f"📊 Showing **{len(filtered_available)}** of **{len(available_features)}** features")
     
     config_tabs = st.tabs(["📈 ETS", "🌳 XGBoost", "🐱 CatBoost", "💡 LightGBM", "🌲 RandomForest", "🎯 ElasticNet", "📐 Ridge"])
 
@@ -565,7 +610,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
         'hpi_growth_rolling_mean_1y',
         'house_sales_lag1', 'house_sales_rolling_mean_1y',
         'ocr_rolling_mean_1y', 'cpi_rolling_mean_1y'
-    ] if f in available_features]
+    ] if f in filtered_available]
     
     # ETS Configuration
     with config_tabs[0]:
