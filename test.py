@@ -740,7 +740,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
 
     if go_train:
         # Validation
-        selected_models = [use_ets, use_xgb, use_cat, use_rf, use_en, use_lgbm]
+        selected_models = [use_ets, use_xgb, use_cat, use_rf, use_en, use_lgbm, use_ridge]
         if not any(selected_models):
             st.warning("⚠️ Please select at least one model to train")
         elif use_xgb and not xgb_features:
@@ -753,7 +753,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
             st.warning("⚠️ ElasticNet selected but no features chosen")
         elif use_lgbm and not lgbm_features:
             st.warning("⚠️ LightGBM selected but no features chosen")
-        elif use_ridge and not ridge_features:  # ADD THIS
+        elif use_ridge and not ridge_features:
             st.warning("⚠️ Ridge selected but no features chosen")
         else:
             results = []
