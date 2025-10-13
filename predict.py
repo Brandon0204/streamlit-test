@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from supabase import create_client, Client
+import statsmodels.api as sm
 
 def _get_secret(path: str, default: Optional[str] = None) -> Optional[str]:
     """Get secret from Streamlit secrets or environment variables."""
@@ -123,23 +124,52 @@ class HPIPredictor:
             if X[col].isna().any():
                 X[col] = X[col].fillna(X[col].median())
         
-        # Train appropriate model
-        if model_name.lower() == 'xgboost':
+        # Train appropriate model based on model name
+        model_name_lower = model_name.lower()
+        
+        if model_name_lower == 'xgboost':
             from xgboost import XGBRegressor
             model = XGBRegressor(**best_params)
-        elif model_name.lower() == 'catboost':
+            model.fit(X, y)
+            
+        elif model_name_lower == 'catboost':
             from catboost import CatBoostRegressor
             model = CatBoostRegressor(**best_params)
-        elif model_name.lower() == 'randomforest':
+            model.fit(X, y, verbose=False)
+            
+        elif model_name_lower == 'lightgbm':
+            from lightgbm import LGBMRegressor
+            model = LGBMRegressor(**best_params)
+            model.fit(X, y)
+            
+        elif model_name_lower == 'randomforest':
             from sklearn.ensemble import RandomForestRegressor
             model = RandomForestRegressor(**best_params)
-        elif model_name.lower() == 'elasticnet':
+            model.fit(X, y)
+            
+        elif model_name_lower == 'elasticnet':
             from sklearn.linear_model import ElasticNet
             model = ElasticNet(**best_params)
+            model.fit(X, y)
+            
+        elif model_name_lower == 'ridge':
+            from sklearn.linear_model import Ridge
+            model = Ridge(**best_params)
+            model.fit(X, y)
+            
+        elif model_name_lower == 'lasso':
+            from sklearn.linear_model import Lasso
+            model = Lasso(**best_params)
+            model.fit(X, y)
+            
+        elif model_name_lower == 'ols':
+            # OLS needs constant added
+            X_with_const = sm.add_constant(X)
+            model = sm.OLS(y, X_with_const).fit()
+            
         else:
             raise ValueError(f"Unknown model type: {model_name}")
         
-        model.fit(X, y)
         return model, features
     
     def make_predictions(
@@ -194,11 +224,15 @@ class HPIPredictor:
                 if X_pred[col].isna().any():
                     X_pred[col] = X_pred[col].fillna(X_pred[col].median())
             
-            # Point predictions
-            point_preds = model.predict(X_pred)
+            # Point predictions - handle OLS separately
+            if model_name.lower() == 'ols':
+                # OLS needs constant added
+                X_pred_with_const = sm.add_constant(X_pred)
+                point_preds = model.predict(X_pred_with_const)
+            else:
+                point_preds = model.predict(X_pred)
             
             # Bootstrap for confidence intervals
-            # Use out-of-bag error estimate or simple residual-based approach
             if hasattr(model, 'estimators_'):  # RandomForest or tree ensemble
                 # Get predictions from individual trees for uncertainty
                 all_tree_preds = np.array([tree.predict(X_pred) for tree in model.estimators_])

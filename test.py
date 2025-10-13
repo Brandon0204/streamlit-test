@@ -16,6 +16,7 @@ from contextlib import redirect_stdout, redirect_stderr
 from feature_engineering import HouseFeatureEngineering
 import shap
 import matplotlib.pyplot as plt
+import statsmodels.api as sm
 from io import BytesIO
 from ets_trainer import run_experiment as run_ets
 from xgboost_trainer import run_experiment as run_xgb
@@ -1299,7 +1300,14 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
                         try:                            
                             trainer = r["trainer"]
                             
-                            explainer = shap.LinearExplainer(trainer.model, trainer.X_train)
+                            # Create a wrapper function for statsmodels prediction
+                            def predict_fn(X):
+                                X_with_const = sm.add_constant(X)
+                                return trainer.model.predict(X_with_const)
+                            
+                            # Use KernelExplainer with a sample of training data as background
+                            background = shap.sample(trainer.X_train, min(100, len(trainer.X_train)))
+                            explainer = shap.KernelExplainer(predict_fn, background)
                             shap_values = explainer.shap_values(trainer.X_test)
                             
                             fig_matplotlib, ax = plt.subplots(figsize=(10, max(6, len(ols_features) * 0.3)))
@@ -1323,7 +1331,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
                             
                             shap_plots.append(("OLS", buf))
                         except Exception as shap_err:
-                            st.warning(f"Could not generate SHAP plot: {shap_err}")
+                            st.warning(f"Could not generate SHAP plot for OLS: {shap_err}")
                     
                     st.success("✅ OLS: Training completed")
                 except Exception as e:
