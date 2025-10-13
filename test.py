@@ -1294,33 +1294,49 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
                     results.append({"model_name": "OLS", **r["metrics"]})
                     charts.append(("OLS", r["figure"]))
                     
-                    # SHAP for OLS using LinearExplainer
+                    # SHAP for OLS using KernelExplainer (statsmodels not directly supported)
                     if show_shap and "trainer" in r:
                         status_text.text(f"Generating SHAP summary plot for OLS...")
                         try:                            
                             trainer = r["trainer"]
                             
                             # Create a wrapper function for statsmodels prediction
+                            # This must add the constant in the same way as training
                             def predict_fn(X):
-                                X_with_const = sm.add_constant(X)
+                                # X is a numpy array, convert to DataFrame with feature names
+                                X_df = pd.DataFrame(X, columns=ols_features)
+                                X_with_const = sm.add_constant(X_df, has_constant='add')
+                                
+                                # Ensure column order matches model expectations
+                                if hasattr(trainer.model.model, 'exog_names'):
+                                    expected_cols = trainer.model.model.exog_names
+                                    X_with_const = X_with_const[expected_cols]
+                                
                                 return trainer.model.predict(X_with_const)
                             
                             # Use KernelExplainer with a sample of training data as background
-                            background = shap.sample(trainer.X_train, min(100, len(trainer.X_train)))
+                            # Use fewer samples for speed (KernelExplainer is slow)
+                            background_size = min(50, len(trainer.X_train))
+                            background = shap.sample(trainer.X_train, background_size)
+                            
+                            # Use fewer test samples for SHAP (it's very slow for OLS)
+                            test_sample_size = min(20, len(trainer.X_test))
+                            test_sample = shap.sample(trainer.X_test, test_sample_size)
+                            
                             explainer = shap.KernelExplainer(predict_fn, background)
-                            shap_values = explainer.shap_values(trainer.X_test)
+                            shap_values = explainer.shap_values(test_sample)
                             
                             fig_matplotlib, ax = plt.subplots(figsize=(10, max(6, len(ols_features) * 0.3)))
                             shap.summary_plot(
                                 shap_values, 
-                                trainer.X_test, 
+                                test_sample, 
                                 feature_names=ols_features,
                                 show=False,
                                 plot_type="dot",
                                 color_bar=True,
                                 max_display=len(ols_features)
                             )
-                            plt.title("OLS - SHAP Summary Plot", fontsize=14, pad=20)
+                            plt.title("OLS - SHAP Summary Plot (sampled)", fontsize=14, pad=20)
                             plt.xlabel("SHAP value (impact on model output)", fontsize=11)
                             plt.tight_layout()
                             
@@ -1332,6 +1348,8 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
                             shap_plots.append(("OLS", buf))
                         except Exception as shap_err:
                             st.warning(f"Could not generate SHAP plot for OLS: {shap_err}")
+                            import traceback
+                            st.code(traceback.format_exc())
                     
                     st.success("✅ OLS: Training completed")
                 except Exception as e:

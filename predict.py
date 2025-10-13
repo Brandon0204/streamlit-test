@@ -178,6 +178,7 @@ class HPIPredictor:
         predict_data: pd.DataFrame, 
         features: Optional[List[str]], 
         model_name: str,
+        train_data: pd.DataFrame = None,
         n_simulations: int = 1000
     ) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
         """
@@ -219,22 +220,50 @@ class HPIPredictor:
         else:
             X_pred = predict_data[features].copy()
             
-            # Fill missing values with median from training
-            for col in X_pred.columns:
-                if X_pred[col].isna().any():
-                    X_pred[col] = X_pred[col].fillna(X_pred[col].median())
+            # Fill missing values with median/mean from TRAINING DATA (not prediction data)
+            # This prevents data leakage and handles new NaN patterns
+            if train_data is not None:
+                train_features = train_data[features].copy()
+                for col in X_pred.columns:
+                    if X_pred[col].isna().any():
+                        # Use training data median to fill prediction data NaNs
+                        fill_value = train_features[col].median()
+                        if pd.isna(fill_value):
+                            fill_value = 0.0  # Fallback if training median is also NaN
+                        X_pred[col] = X_pred[col].fillna(fill_value)
+                        print(f"      Filled {col} NaNs with training median: {fill_value:.4f}")
+            else:
+                # Fallback: use prediction data itself
+                for col in X_pred.columns:
+                    if X_pred[col].isna().any():
+                        fill_value = X_pred[col].median()
+                        if pd.isna(fill_value):
+                            fill_value = 0.0
+                        X_pred[col] = X_pred[col].fillna(fill_value)
+            
+            # Final check: ensure no NaNs remain
+            if X_pred.isna().any().any():
+                print("      Warning: Some NaN values remain, filling with 0")
+                X_pred = X_pred.fillna(0.0)
             
             # Point predictions - handle OLS separately
             if model_name.lower() == 'ols':
-                # OLS needs constant added - ensure it has the same column structure
-                # The model.model.exog_names tells us what columns it expects
-                X_pred_with_const = sm.add_constant(X_pred, has_constant='add')
+                # For statsmodels OLS, we need to match the exact structure from training
+                expected_cols = model.model.exog_names
                 
-                # Reorder columns to match training order if needed
-                if hasattr(model.model, 'exog_names'):
-                    expected_cols = model.model.exog_names
-                    # Ensure columns match exactly
+                # Add constant as first column
+                X_pred_with_const = X_pred.copy()
+                X_pred_with_const.insert(0, 'const', 1.0)
+                
+                # Ensure we have all expected columns in the right order
+                try:
                     X_pred_with_const = X_pred_with_const[expected_cols]
+                except KeyError as e:
+                    print(f"      Column mismatch: {e}")
+                    # Recreate with proper structure
+                    X_pred_with_const = sm.add_constant(X_pred, has_constant='add')
+                    if hasattr(X_pred_with_const, 'columns'):
+                        X_pred_with_const.columns = expected_cols
                 
                 point_preds = model.predict(X_pred_with_const)
             else:
@@ -312,7 +341,8 @@ class HPIPredictor:
             model, 
             predict_data, 
             features, 
-            best_model_info['model_name']
+            best_model_info['model_name'],
+            train_data=train_data
         )
         
         print("\n" + "="*80)
