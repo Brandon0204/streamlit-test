@@ -265,10 +265,11 @@ class HPIPredictor:
                     if hasattr(X_pred_with_const, 'columns'):
                         X_pred_with_const.columns = expected_cols
                 
-                point_preds = model.predict(X_pred_with_const)
+                # OLS returns a Series, convert to numpy array for consistent indexing
+                point_preds = np.asarray(model.predict(X_pred_with_const))
             else:
-                point_preds = model.predict(X_pred)
-            
+                point_preds = np.asarray(model.predict(X_pred))
+
             # Bootstrap for confidence intervals
             if hasattr(model, 'estimators_'):  # RandomForest or tree ensemble
                 # Get predictions from individual trees for uncertainty
@@ -277,7 +278,7 @@ class HPIPredictor:
             else:
                 # Simple approach: use a fixed percentage of prediction as uncertainty
                 pred_std = np.abs(point_preds) * 0.15  # 15% uncertainty
-            
+
             for idx, row in predict_data.iterrows():
                 i = idx - predict_data.index[0]
                 pred_value = point_preds[i]
