@@ -638,7 +638,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
         st.markdown("##### Feature Selection")
         xgb_features = st.multiselect(
             "Select features for XGBoost",
-            options=available_features,
+            options=filtered_available,
             default=default_features,
             help="Choose features for XGBoost model",
             key="xgb_features"
@@ -663,7 +663,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
         st.markdown("##### Feature Selection")
         cat_features = st.multiselect(
             "Select features for CatBoost",
-            options=available_features,
+            options=filtered_available,
             default=default_features,
             help="Choose features for CatBoost model",
             key="cat_features"
@@ -688,7 +688,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
         st.markdown("##### Feature Selection")
         lgbm_features = st.multiselect(
             "Select features for LightGBM",
-            options=available_features,
+            options=filtered_available,
             default=default_features,
             help="Choose features for LightGBM model",
             key="lgbm_features"
@@ -713,7 +713,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
         st.markdown("##### Feature Selection")
         rf_features = st.multiselect(
             "Select features for RandomForest",
-            options=available_features,
+            options=filtered_available,
             default=default_features,
             help="Choose features for RandomForest model",
             key="rf_features"
@@ -738,7 +738,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
         st.markdown("##### Feature Selection")
         en_features = st.multiselect(
             "Select features for ElasticNet",
-            options=available_features,
+            options=filtered_available,
             default=default_features,
             help="Choose features for ElasticNet model",
             key="en_features"
@@ -763,7 +763,7 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
         st.markdown("##### Feature Selection")
         ridge_features = st.multiselect(
             "Select features for Ridge",
-            options=available_features,
+            options=filtered_available,
             default=default_features,
             help="Choose features for Ridge regression model",
             key="ridge_features"
