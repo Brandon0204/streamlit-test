@@ -119,10 +119,15 @@ class HPIPredictor:
         X = train_clean[features].copy()
         y = train_clean['hpi_growth'].copy()
         
+        print(f"\n      Training data shape: {X.shape}")
+        print(f"      Target range: [{y.min():.2f}, {y.max():.2f}]")
+        
         # Fill missing feature values with median
         for col in X.columns:
             if X[col].isna().any():
-                X[col] = X[col].fillna(X[col].median())
+                median_val = X[col].median()
+                X[col] = X[col].fillna(median_val)
+                print(f"      Filled {col} with median: {median_val:.4f}")
         
         # Train appropriate model based on model name
         model_name_lower = model_name.lower()
@@ -163,9 +168,13 @@ class HPIPredictor:
             model.fit(X, y)
             
         elif model_name_lower == 'ols':
-            # OLS needs constant added
-            X_with_const = sm.add_constant(X)
+            # OLS needs constant added - this is CRITICAL
+            X_with_const = sm.add_constant(X, has_constant='add')
+            print(f"      OLS training X shape (with const): {X_with_const.shape}")
+            print(f"      OLS columns: {list(X_with_const.columns)}")
             model = sm.OLS(y, X_with_const).fit()
+            print(f"      OLS coefficients: {len(model.params)}")
+            print(f"      OLS R²: {model.rsquared:.4f}")
             
         else:
             raise ValueError(f"Unknown model type: {model_name}")
@@ -216,24 +225,24 @@ class HPIPredictor:
                     'std': historical_std
                 })
         
-        # Supervised model predictions with bootstrap
+        # Supervised model predictions
         else:
             X_pred = predict_data[features].copy()
             
-            # Fill missing values with median/mean from TRAINING DATA (not prediction data)
-            # This prevents data leakage and handles new NaN patterns
+            print(f"\n      Prediction data shape (before filling): {X_pred.shape}")
+            print(f"      Features with NaN: {X_pred.isna().sum()[X_pred.isna().sum() > 0].to_dict()}")
+            
+            # Fill missing values using TRAINING DATA statistics (critical!)
             if train_data is not None:
                 train_features = train_data[features].copy()
                 for col in X_pred.columns:
                     if X_pred[col].isna().any():
-                        # Use training data median to fill prediction data NaNs
                         fill_value = train_features[col].median()
                         if pd.isna(fill_value):
-                            fill_value = 0.0  # Fallback if training median is also NaN
+                            fill_value = 0.0
                         X_pred[col] = X_pred[col].fillna(fill_value)
-                        print(f"      Filled {col} NaNs with training median: {fill_value:.4f}")
+                        print(f"      Filled {col} with training median: {fill_value:.4f}")
             else:
-                # Fallback: use prediction data itself
                 for col in X_pred.columns:
                     if X_pred[col].isna().any():
                         fill_value = X_pred[col].median()
@@ -246,46 +255,73 @@ class HPIPredictor:
                 print("      Warning: Some NaN values remain, filling with 0")
                 X_pred = X_pred.fillna(0.0)
             
+            print(f"      Prediction data shape (after filling): {X_pred.shape}")
+            print(f"      Sample prediction values:\n{X_pred.head(1).to_dict('records')[0]}")
+            
+            # ADD THIS NEW SECTION:
+            # Compare prediction features to training features
+            if train_data is not None:
+                print("\n      📊 Feature Comparison (Prediction vs Training):")
+                train_features = train_data[features].copy()
+                
+                for col in features[:10]:  # Show first 10 features
+                    pred_val = X_pred[col].iloc[0]
+                    train_mean = train_features[col].mean()
+                    train_std = train_features[col].std()
+                    train_min = train_features[col].min()
+                    train_max = train_features[col].max()
+                    
+                    # Calculate z-score to see if prediction value is extreme
+                    z_score = (pred_val - train_mean) / train_std if train_std > 0 else 0
+                    
+                    status = "⚠️ EXTREME" if abs(z_score) > 3 else "✓"
+                    print(f"      {status} {col:40s}: pred={pred_val:8.2f}, train_mean={train_mean:8.2f}, z={z_score:6.2f}")
+                
+                print(f"\n      Full feature count: {len(features)}")
+
             # Point predictions - handle OLS separately
             if model_name.lower() == 'ols':
-                # For statsmodels OLS, we need to match the exact structure from training
+                # Add constant - MUST match training exactly
+                X_pred_with_const = sm.add_constant(X_pred, has_constant='add')
+                
+                print(f"      OLS prediction X shape (with const): {X_pred_with_const.shape}")
+                print(f"      OLS prediction columns: {list(X_pred_with_const.columns)}")
+                print(f"      Expected columns from model: {model.model.exog_names}")
+                
+                # Ensure column order matches model
                 expected_cols = model.model.exog_names
-                
-                # Add constant as first column
-                X_pred_with_const = X_pred.copy()
-                X_pred_with_const.insert(0, 'const', 1.0)
-                
-                # Ensure we have all expected columns in the right order
-                try:
+                if list(X_pred_with_const.columns) != expected_cols:
+                    print(f"      WARNING: Column mismatch! Reordering...")
                     X_pred_with_const = X_pred_with_const[expected_cols]
-                except KeyError as e:
-                    print(f"      Column mismatch: {e}")
-                    # Recreate with proper structure
-                    X_pred_with_const = sm.add_constant(X_pred, has_constant='add')
-                    if hasattr(X_pred_with_const, 'columns'):
-                        X_pred_with_const.columns = expected_cols
                 
-                # OLS returns a Series, convert to numpy array for consistent indexing
-                point_preds = np.asarray(model.predict(X_pred_with_const))
+                # Make prediction
+                point_preds = model.predict(X_pred_with_const)
+                point_preds = np.asarray(point_preds)
+                
+                print(f"      OLS raw predictions: {point_preds}")
+                
             else:
                 point_preds = np.asarray(model.predict(X_pred))
-
+                print(f"      Model predictions: {point_preds}")
+            
+            # Sanity check on predictions
+            if np.any(np.abs(point_preds) > 50):
+                print(f"      ⚠️  WARNING: Unrealistic predictions detected! Range: [{point_preds.min():.2f}, {point_preds.max():.2f}]")
+            
             # Bootstrap for confidence intervals
             if hasattr(model, 'estimators_'):  # RandomForest or tree ensemble
-                # Get predictions from individual trees for uncertainty
                 all_tree_preds = np.array([tree.predict(X_pred) for tree in model.estimators_])
                 pred_std = all_tree_preds.std(axis=0)
             else:
-                # Simple approach: use a fixed percentage of prediction as uncertainty
-                pred_std = np.abs(point_preds) * 0.15  # 15% uncertainty
-
-            for idx, row in predict_data.iterrows():
-                i = idx - predict_data.index[0]
+                # Use 15% uncertainty for non-ensemble models
+                pred_std = np.abs(point_preds) * 0.15
+            
+            for i, row in enumerate(predict_data.itertuples()):
                 pred_value = point_preds[i]
                 std = pred_std[i] if hasattr(pred_std, '__len__') else pred_std
                 
                 predictions.append({
-                    'quarter': row['quarter'],
+                    'quarter': row.quarter,
                     'prediction': pred_value,
                     'lower_95': pred_value - 1.96 * std,
                     'upper_95': pred_value + 1.96 * std,
@@ -361,9 +397,9 @@ class HPIPredictor:
             'train_rows': len(train_data),
             'predict_rows': len(predict_data),
             'message': 'Predictions completed successfully',
-            'model': model,  # Save model for SHAP
-            'X_pred': X_pred,  # Save prediction features for SHAP
-            'features': features  # Save feature names for SHAP
+            'model': model,
+            'X_pred': X_pred,
+            'features': features
         }
 
 

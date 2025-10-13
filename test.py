@@ -28,7 +28,42 @@ from lgbm_trainer import run_experiment as run_lgbm
 from ols_trainer import run_experiment as run_ols
 from lasso_trainer import run_experiment as run_lasso
 from predict import HPIPredictor
-                
+
+def check_multicollinearity(features: List[str], df: pd.DataFrame, threshold: float = 0.8) -> Tuple[bool, List[Tuple[str, str, float]]]:
+    """
+    Check for highly correlated features.
+    
+    Returns:
+        has_issues: bool - True if correlations above threshold found
+        correlated_pairs: List of (feature1, feature2, correlation) tuples
+    """
+    if len(features) < 2:
+        return False, []
+    
+    # Get feature data
+    X = df[features].copy()
+    
+    # Fill NaN for correlation calculation
+    for col in X.columns:
+        if X[col].isna().any():
+            X[col] = X[col].fillna(X[col].median())
+    
+    # Calculate correlation matrix
+    corr_matrix = X.corr().abs()
+    
+    # Find pairs above threshold
+    correlated_pairs = []
+    for i in range(len(corr_matrix.columns)):
+        for j in range(i+1, len(corr_matrix.columns)):
+            if corr_matrix.iloc[i, j] > threshold:
+                correlated_pairs.append((
+                    corr_matrix.columns[i],
+                    corr_matrix.columns[j],
+                    corr_matrix.iloc[i, j]
+                ))
+    
+    return len(correlated_pairs) > 0, correlated_pairs
+
 st.set_page_config(page_title="House Price Data", layout="wide")
 st.title("House Price Data Viewer")
 
@@ -754,6 +789,17 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
         )
         st.caption(f"Selected: **{len(en_features)}** features")
         
+        if en_features and len(en_features) > 1:
+            has_issues, corr_pairs = check_multicollinearity(en_features, df, threshold=0.85)
+            if has_issues:
+                st.warning(f"⚠️ **Multicollinearity detected!** {len(corr_pairs)} feature pairs have correlation > 0.85")
+                with st.expander("View correlated features"):
+                    for f1, f2, corr in corr_pairs[:10]:  # Show first 10
+                        st.write(f"• `{f1}` ↔ `{f2}`: {corr:.3f}")
+                    if len(corr_pairs) > 10:
+                        st.caption(f"... and {len(corr_pairs) - 10} more pairs")
+                    st.info("💡 **Tip:** Linear models work best when features are not highly correlated. Consider removing one from each pair.")
+
         if en_features:
             with st.expander("View selected features"):
                 st.write(", ".join(en_features))
@@ -778,7 +824,16 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
             key="ridge_features"
         )
         st.caption(f"Selected: **{len(ridge_features)}** features")
-        
+        if ridge_features and len(ridge_features) > 1:
+            has_issues, corr_pairs = check_multicollinearity(ridge_features, df, threshold=0.85)
+            if has_issues:
+                st.warning(f"⚠️ **Multicollinearity detected!** {len(corr_pairs)} feature pairs have correlation > 0.85")
+                with st.expander("View correlated features"):
+                    for f1, f2, corr in corr_pairs[:10]:
+                        st.write(f"• `{f1}` ↔ `{f2}`: {corr:.3f}")
+                    if len(corr_pairs) > 10:
+                        st.caption(f"... and {len(corr_pairs) - 10} more pairs")
+                    st.info("💡 **Tip:** While Ridge handles multicollinearity better than OLS, reducing correlation still improves stability.")
         if ridge_features:
             with st.expander("View selected features"):
                 st.write(", ".join(ridge_features))
@@ -803,7 +858,16 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
             key="lasso_features"
         )
         st.caption(f"Selected: **{len(lasso_features)}** features")
-        
+        if lasso_features and len(lasso_features) > 1:
+            has_issues, corr_pairs = check_multicollinearity(lasso_features, df, threshold=0.85)
+            if has_issues:
+                st.warning(f"⚠️ **Multicollinearity detected!** {len(corr_pairs)} feature pairs have correlation > 0.85")
+                with st.expander("View correlated features"):
+                    for f1, f2, corr in corr_pairs[:10]:
+                        st.write(f"• `{f1}` ↔ `{f2}`: {corr:.3f}")
+                    if len(corr_pairs) > 10:
+                        st.caption(f"... and {len(corr_pairs) - 10} more pairs")
+                    st.info("💡 **Tip:** Lasso naturally handles multicollinearity by zeroing out redundant features.")
         if lasso_features:
             with st.expander("View selected features"):
                 st.write(", ".join(lasso_features))
@@ -828,7 +892,17 @@ if not df.empty and table_name == "feature_house" and "hpi_growth" in df.columns
             key="ols_features"
         )
         st.caption(f"Selected: **{len(ols_features)}** features")
-        
+        if ols_features and len(ols_features) > 1:
+            has_issues, corr_pairs = check_multicollinearity(ols_features, df, threshold=0.8)
+            if has_issues:
+                st.error(f"🚨 **High Multicollinearity Detected!** {len(corr_pairs)} feature pairs have correlation > 0.80")
+                with st.expander("View correlated features", expanded=True):
+                    for f1, f2, corr in corr_pairs[:15]:
+                        st.write(f"• `{f1}` ↔ `{f2}`: **{corr:.3f}**")
+                    if len(corr_pairs) > 15:
+                        st.caption(f"... and {len(corr_pairs) - 15} more pairs")
+                    st.warning("⚠️ **OLS is very sensitive to multicollinearity!** This can cause unstable coefficients and extreme predictions. Please remove highly correlated features.")
+                    st.info("💡 **Common culprits:** Don't mix scaled features (e.g., `cpi_scaled`) with their rolling means (e.g., `cpi_rolling_mean_1y`)")
         if ols_features:
             with st.expander("View selected features"):
                 st.write(", ".join(ols_features))
